@@ -1,5 +1,7 @@
 #![feature(test)]
 extern crate test;
+extern crate unicase;
+use unicase::UniCase;
 use std::fmt;
 use std::fs::File;
 use std::io::prelude::*;
@@ -51,10 +53,10 @@ impl Fuzzysort {
                 total: 0,
             }
         } else {
-            let search_lower = search.to_lowercase();
+            let search_unicase = UniCase::new(&search);
             let mut results: Vec<Info> = Vec::new();
             for target in targets {
-                let info_result = self.info(&search_lower, target);
+                let info_result = self.info(&search_unicase, target);
                 match info_result {
                     Some(unwrap_result) => results.push(unwrap_result),
                     None => (),
@@ -78,11 +80,11 @@ impl Fuzzysort {
             }
         }
     }
-    fn info(&self, search_lower: &String, target: &String) -> Option<Info> {
-        let mut search_chars = search_lower.chars();
+    fn info(&self, search_unicase: &String, target: &String) -> Option<Info> {
+        let mut search_chars = search_unicase.chars();
 
-        let target_lower = target.to_lowercase();
-        let mut target_chars = target_lower.chars().enumerate();
+        let target_unicase = UniCase::new(&target);
+        let mut target_chars = target_unicase.chars().enumerate();
 
         let mut no_match_count = 0;
         let mut matches_simple: Vec<usize> = Vec::new();
@@ -108,16 +110,16 @@ impl Fuzzysort {
             }
         }
         if search_char == None {
-            Some(self.info_strict(&search_lower, target, matches_simple))
+            Some(self.info_strict(&search_unicase, target, matches_simple))
         } else {
             None
         }
     }
-    fn info_strict(&self, search_lower: &String, target: &String, matches_simple: Vec<usize>) -> Info {
-        let mut search_chars = search_lower.chars().enumerate();
+    fn info_strict(&self, search_unicase: &String, target: &String, matches_simple: Vec<usize>) -> Info {
+        let mut search_chars = search_unicase.chars().enumerate();
 
-        let target_lower = target.to_lowercase();
-        let mut target_chars = target_lower.chars().enumerate();
+        let target_unicase = UniCase::new(target);
+        let mut target_chars = target_unicase.chars().enumerate();
 
         let mut no_match_count = 0;
         let mut matches_strict: Vec<usize> = Vec::new();
@@ -200,7 +202,7 @@ impl Fuzzysort {
         if !strict_success {
             score *= 1000
         }
-        score += target.len() - search_lower.len();
+        score += target.len() - search_unicase.len();
         Info {
             score: score,
             matches: matches_best,
@@ -295,6 +297,14 @@ mod tests {
     }
 
     #[bench]
+    #[ignore]
+    fn lowercase(b: &mut test::Bencher) {
+        let target = String::from("Search some long string to test the lowercase benchmark.");
+        assert_eq!(UniCase::new("İ"), UniCase::new("i̇"));
+        b.iter(|| UniCase::new(&target))
+    }
+
+    #[bench]
     fn bench_go(b: &mut Bencher) {
         let fuzzysort = Fuzzysort {
             no_match_limit: 100,
@@ -305,7 +315,71 @@ mod tests {
         let mut f = File::open("testdata").expect("file not found");
         let mut contents = String::new();
         f.read_to_string(&mut contents).expect("something went wrong when reading the testdata");
-        let v: Vec<String> = contents.split("\n").map(|x| x.to_string()).collect();
-        b.iter(|| fuzzysort.go(String::from("query"), &v));
+        let test_data: Vec<String> = contents.split("\n").map(|x| x.to_string()).collect();
+        fn test(f: &Fuzzysort, v: &Vec<String>) {
+            f.go(String::from("e"), &v);
+            f.go(String::from("a"), &v);
+            f.go(String::from("word"), &v);
+            f.go(String::from("longword"), &v);
+        }
+        b.iter(|| fuzzysort.go(String::from("query"), &test_data))
+    }
+
+    #[bench]
+    #[ignore]
+    fn bench_go_single(b: &mut test::Bencher) {
+        let fuzzysort = Fuzzysort {
+            no_match_limit: 100,
+            limit: None,
+            highlight_open: String::from("<b>"),
+            highlight_close: String::from("</b>"),
+        };
+        b.iter(|| fuzzysort.go(String::from("query"), &vec![String::from("something with yreuq key word quer y")]))
+    }
+
+    #[bench]
+    #[ignore]
+    fn bench_info_single(b: &mut test::Bencher) {
+        let fuzzysort = Fuzzysort {
+            no_match_limit: 100,
+            limit: None,
+            highlight_open: String::from("<b>"),
+            highlight_close: String::from("</b>"),
+        };
+        let search_lower = String::from("query").to_lowercase();
+        let target = String::from("something with yreuq key word quer y");
+        b.iter(|| fuzzysort.info(&search_lower, &target))
+    }
+
+    #[bench]
+    #[ignore]
+    fn bench_info_strict_single(b: &mut test::Bencher) {
+        let fuzzysort = Fuzzysort {
+            no_match_limit: 100,
+            limit: None,
+            highlight_open: String::from("<b>"),
+            highlight_close: String::from("</b>"),
+        };
+        let search_lower = String::from("query").to_lowercase();
+        let target = String::from("something with yreuq key word quer y");
+        b.iter(|| fuzzysort.info_strict(&search_lower, &target, vec![19, 31, 32, 33, 35]))
+    }
+
+    #[bench]
+    #[ignore]
+    fn bench_highlight_single(b: &mut test::Bencher) {
+        let fuzzysort = Fuzzysort {
+            no_match_limit: 100,
+            limit: None,
+            highlight_open: String::from("<b>"),
+            highlight_close: String::from("</b>"),
+        };
+        let info = Info {
+            score: 96,
+            matches: vec![30, 31, 32, 33, 35],
+            highlighted: String::new(),
+            target: String::from("something with yreuq key word quer y"),
+        };
+        b.iter(|| fuzzysort.highlight(&info))
     }
 }
